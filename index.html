@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2563eb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>大学生生活费管理 · 测试版</title>
+<style>
+*{box-sizing:border-box}
+:root{--blue:#2563eb;--green:#16a34a;--yellow:#d97706;--red:#dc2626;--bg:#f4f6fb;--card:#fff;--text:#17202e;--muted:#667085;--line:#e4e8f0}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+header{background:var(--blue);color:#fff;padding:16px 16px 12px}
+header h1{font-size:19px;margin:0}
+header p{margin:4px 0 0;font-size:12.5px;opacity:.92}
+main{max-width:980px;margin:0 auto;padding:14px 12px 32px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.big{font-size:30px;font-weight:800}
+.muted{color:var(--muted);font-size:13px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>*{flex:1 1 140px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #cfd6e4;border-radius:10px;font-size:16px;background:#fff}
+button{border:0;border-radius:10px;padding:11px 14px;font-size:15px;background:var(--blue);color:#fff;cursor:pointer}
+button.ghost{background:#eef2ff;color:var(--blue)}
+button.danger{background:#fee2e2;color:var(--red)}
+button.small{padding:7px 10px;font-size:13px}
+nav{position:sticky;top:0;background:#fff;border-bottom:2px solid var(--line);display:flex;z-index:20;box-shadow:0 2px 8px rgba(23,32,46,.06)}
+nav button{flex:1;background:none;color:var(--muted);border-radius:0;padding:13px 2px;font-size:14px;white-space:nowrap}
+nav button.active{color:var(--blue);font-weight:800;border-bottom:3px solid var(--blue)}
+.guide{background:#eef4ff;border:1px solid #c9dcff;border-radius:14px;padding:12px 14px;margin-bottom:12px}
+.guide b{color:var(--blue)}
+.guide ol{margin:6px 0 0;padding-left:20px;line-height:1.7;font-size:14px}
+.stepbtn{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.page{display:none}.page.active{display:block}
+.progress{height:10px;background:#e8edf7;border-radius:99px;overflow:hidden;margin:6px 0}
+.progress i{display:block;height:100%;background:var(--blue)}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:#eef2ff;color:var(--blue)}
+.green{color:var(--green)}.yellow{color:var(--yellow)}.red{color:var(--red)}
+.result{border-radius:12px;padding:12px;margin-top:10px}
+.result.g{background:#eaf7ee}.result.y{background:#fff4e0}.result.r{background:#fdecec}
+.listitem{display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);align-items:center}
+.bar{height:8px;background:#e8edf7;border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:#7aa2f7}
+@media(min-width:760px){.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}nav button{font-size:15px;padding:14px 8px}}
+</style>
+</head>
+<body>
+<header><h1>大学生生活费管理 · 测试版</h1><p>先保饭钱，再谈买东西；买之前先算账。数据只存在这台设备上。</p></header>
+<nav id="tabs">
+<button data-page="home" class="active">首页看板</button>
+<button data-page="record">记一笔</button>
+<button data-page="trial">能不能买</button>
+<button data-page="wish">心愿单</button>
+<button data-page="settings">设置</button>
+</nav>
+<main>
+<section id="page-home" class="page active"></section>
+<section id="page-record" class="page"></section>
+<section id="page-trial" class="page"></section>
+<section id="page-wish" class="page"></section>
+<section id="page-settings" class="page"></section>
+</main>
+<script>
+"use strict";
+/* ===== 核心计算（与方案第5节一致，金额内部用分） ===== */
+function yuanToCents(v){var n=parseFloat(String(v).replace(/,/g,""));if(isNaN(n))return 0;return Math.round(n*100);}
+function fmt(c){var neg=c<0;c=Math.abs(Math.round(c));return (neg?"-¥":"¥")+(c/100).toFixed(2);}
+function daysInMonth(month){var p=month.split("-");return new Date(+p[0],+p[1],0).getDate();}
+function fixedMonthlyEquiv(f){if(f.cycle==="weekly")return Math.round(f.amountCents*52/12);if(f.cycle==="semester")return Math.round(f.amountCents/5);return f.amountCents;}
+function calcTrial(remainingSpendable,priceCents,R,M,S,freeTotal,D,piggy){
+  var after=remainingSpendable-priceCents;
+  var afterPerDay=R>0?after/R:0;
+  var freeAfter=after-M*R;
+  var level="r";
+  if(afterPerDay>=M&&freeAfter>=0)level="g";else if(after>=0)level="y";
+  var dailyFree=D>0?freeTotal/D:0;
+  var needDays=dailyFree>0?Math.ceil(priceCents/dailyFree):null;
+  var stillNeed=Math.max(0,priceCents-piggy);
+  var saveDays=dailyFree>0?Math.ceil(stillNeed/dailyFree):null;
+  return {after:after,afterPerDay:afterPerDay,survivePerDay:afterPerDay,freeAfter:freeAfter,level:level,cutPerDay:M-afterPerDay,needDays:needDays,saveDays:saveDays,stillNeed:stillNeed,moveSaving:freeAfter<0?-freeAfter:0,needToZero:after<0?-after:0,needToBase:Math.max(0,M*R-after)};
+}
+function calcOverspend(remainingSpendable,R,M,S){
+  var eatDays=M>0?remainingSpendable/M:0;
+  var perDay=R>0?remainingSpendable/R:0;
+  var remReal=remainingSpendable+S;
+  return {eatDays:eatDays,shortDays:R-eatDays,perDay:perDay,survivePerDay:perDay,cutPerDay:M-perDay,needToBase:M*R-remainingSpendable,needToZero:remainingSpendable<0?-remainingSpendable:0,remReal:remReal,eatDaysReal:M>0?remReal/M:0,perDayReal:R>0?remReal/R:0};
+}
+function calcCalibration(B,incomeSum,recordedSpent,actualRemainCents,actualSpentCents,useRemain){
+  var actualSpent=useRemain?(B+incomeSum-actualRemainCents):actualSpentCents;
+  return {actualSpent:actualSpent,diff:actualSpent-recordedSpent};
+}
+/* ===== 状态 ===== */
+var KEY="studentBudgetV1";
+var PRESET_FIXED=["话费/流量","交通","宿舍水电","网费/宽带","订阅会员","学习","日用品定期补货","健身/运动","社团会费","分期还款","其他"];
+var PRESET_TAGS=["餐饮","购物-数码","购物-服饰","学习","交通","娱乐","社交请客","日用品","其他"];
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function todayISO(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function defaultState(){
+  var t=todayISO();
+  return {config:{month:t.slice(0,7),totalCents:300000,mealCents:4500,savingCents:30000,testDate:"",overspendMode:null,
+    fixed:[{id:uid(),tag:"话费/流量",amountCents:5000,day:1,cycle:"monthly",enabled:true},{id:uid(),tag:"交通",amountCents:10000,day:1,cycle:"monthly",enabled:true},{id:uid(),tag:"订阅会员",amountCents:5000,day:5,cycle:"monthly",enabled:true}],
+    dailyTags:PRESET_TAGS.slice(),customFixedTags:[]},
+    txns:[],wishlist:[],piggyTxns:[],archives:[]};
+}
+var state;
+try{state=JSON.parse(localStorage.getItem(KEY))||defaultState();}catch(e){state=defaultState();}
+if(!state.piggyTxns)state.piggyTxns=[];
+if(!state.wishlist)state.wishlist=[];
+if(!state.archives)state.archives=[];
+function save(){localStorage.setItem(KEY,JSON.stringify(state));}
+function effDate(){return state.config.testDate||todayISO();}
+function snapshotBeforeRollover(){
+  try{localStorage.setItem(KEY+"_backup",JSON.stringify({at:new Date().toISOString(),state:state}));}catch(e){}
+}
+function hasBackup(){try{return !!localStorage.getItem(KEY+"_backup");}catch(e){return false;}}
+function restoreBackup(){
+  var raw;try{raw=localStorage.getItem(KEY+"_backup");}catch(e){}
+  if(!raw){alert("没有可恢复的备份");return;}
+  if(!confirm("恢复到上次月度结算前的全部数据？当前数据会被覆盖。"))return;
+  try{state=JSON.parse(raw).state;}catch(e){alert("备份损坏，恢复失败");return;}
+  if(!state.piggyTxns)state.piggyTxns=[];if(!state.wishlist)state.wishlist=[];if(!state.archives)state.archives=[];
+  save();renderAll();alert("已恢复到结算前的数据");
+}
+function monthRolloverIfNeeded(targetMonth){
+  var curMonth=targetMonth||effDate().slice(0,7),oldMonth=state.config.month;
+  if(curMonth<=oldMonth)return null;
+  snapshotBeforeRollover();
+  var c=state.config,D=daysInMonth(oldMonth);
+  var F=c.fixed.filter(function(f){return f.enabled;}).reduce(function(s,f){return s+fixedMonthlyEquiv(f);},0);
+  var income=0,spent=0,mealSpent=0;
+  state.txns.forEach(function(t){if(t.type==="income")income+=t.amountCents;else{spent+=t.amountCents;if(t.tag==="餐饮")mealSpent+=t.amountCents;}});
+  var B=c.totalCents+income;
+  var realRemain=B-F-spent;
+  var piggyAutoFull=c.mealCents*D-mealSpent;
+  var piggyManual=(state.piggyTxns||[]).reduce(function(s,t){return s+t.amountCents;},0);
+  var piggyEnd=piggyAutoFull+piggyManual;
+  var carried=Math.max(realRemain,piggyEnd);
+  var bought=state.wishlist.filter(function(w){return w.status==="bought";});
+  state.archives.push({month:oldMonth,archivedAt:effDate(),
+    config:JSON.parse(JSON.stringify(c)),txns:state.txns,piggyTxns:state.piggyTxns,boughtWishlist:bought,
+    summary:{B:B,F:F,income:income,spent:spent,mealSpent:mealSpent,savingCents:c.savingCents,realRemain:realRemain,piggyEnd:piggyEnd,carriedToPiggy:carried}});
+  state.config.month=curMonth;
+  state.config.overspendMode=null;
+  state.txns=[];
+  state.wishlist=state.wishlist.filter(function(w){return w.status!=="bought";});
+  state.piggyTxns=carried!==0?[{id:uid(),date:effDate(),amountCents:carried,kind:"carryover",note:oldMonth+"结余转入小金库"}]:[];
+  save();
+  return {oldMonth:oldMonth,curMonth:curMonth,carried:carried,spent:spent};
+}
+function nextMonthStr(month){var p=month.split("-");return +p[1]===12?(+p[0]+1)+"-01":p[0]+"-"+String(+p[1]+1).padStart(2,"0");}
+function setSimDate(v){
+  state.config.testDate=v||"";
+  save();
+  var r=monthRolloverIfNeeded();
+  renderAll();
+  if(r)alert("模拟跨月结算完成："+r.oldMonth+" 明细已归档，结余 "+fmt(r.carried)+" 已进小金库，"+r.curMonth+" 账单已清零重算。结算前数据已自动备份，可在模拟栏恢复。");
+}
+function shiftSimDay(n){
+  var d=new Date(effDate()+"T00:00:00");d.setDate(d.getDate()+n);
+  var iso=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  setSimDate(iso);
+}
+function jumpNextMonth(){setSimDate(nextMonthStr(effDate().slice(0,7))+"-01");}
+function backToRealToday(){setSimDate("");}
+function settleMonthNow(){
+  var target=nextMonthStr(state.config.month);
+  if(!confirm("手动月度重置：把 "+state.config.month+" 结算掉（明细归档、结余进小金库、账单清零），进入 "+target+"？结算前数据会自动备份。"))return;
+  state.config.testDate=target+"-01";
+  save();
+  var r=monthRolloverIfNeeded(target);
+  renderAll();
+  if(r)alert("月度重置完成："+r.oldMonth+" 已归档，结余 "+fmt(r.carried)+" 已进小金库，现在是 "+r.curMonth+"，账单已清零。");
+}
+function simBarCard(d){
+  var sim=!!state.config.testDate;
+  return '<div class="card" style="border-color:'+(sim?"#f0b429":"var(--line)")+'"><b>日期模拟'+(sim?"（模拟中）":"")+'</b>'
+  +'<p class="muted">现在按 '+(sim?"模拟日期":"手机真实日期")+' <b>'+d.ed+'</b> 计算。改日期后所有数据按那天重算（饭钱预留、今日可用、吃饭进度都会变）；跨到新月份会自动结算：明细归档、结余进小金库、账单清零。结算前会自动备份一份，可恢复。</p>'
+  +'<label>模拟日期</label><input id="simDate" type="date" value="'+d.ed+'" onchange="setSimDate(this.value)">'
+  +'<div class="stepbtn"><button class="small ghost" onclick="shiftSimDay(-1)">前一天</button><button class="small ghost" onclick="shiftSimDay(1)">后一天</button><button class="small ghost" onclick="jumpNextMonth()">跳到下月1号</button><button class="small ghost" onclick="backToRealToday()">回到真实今天</button></div>'
+  +'<div class="stepbtn"><button class="small" onclick="settleMonthNow()">手动月度重置（结算到下月）</button>'+(hasBackup()?'<button class="small ghost" onclick="restoreBackup()">恢复结算前备份</button>':"")+'</div></div>';
+}
+function derived(){
+  var c=state.config,month=c.month,D=daysInMonth(month),ed=effDate();
+  var day=ed.slice(0,7)===month?parseInt(ed.slice(8,10),10):(ed<month+"-01"?1:D);
+  var R=Math.max(0,D-day+1);
+  var F=c.fixed.filter(function(f){return f.enabled;}).reduce(function(s,f){return s+fixedMonthlyEquiv(f);},0);
+  var income=0,spent=0,todaySpent=0,mealSpent=0;
+  state.txns.forEach(function(t){
+    if(t.type==="income")income+=t.amountCents;
+    else{spent+=t.amountCents;if(t.date===ed)todaySpent+=t.amountCents;if(t.tag==="餐饮")mealSpent+=t.amountCents;}
+  });
+  var B=c.totalCents+income;
+  var remTotal=B-F-c.savingCents-spent;
+  var freeTotal=B-F-c.savingCents-c.mealCents*D;
+  var mealSavedSoFar=0;
+  for(var d=1;d<day;d++){
+    var ds=month+"-"+String(d).padStart(2,"0"),ms=0;
+    state.txns.forEach(function(t){if(t.date===ds&&t.type!=="income"&&t.tag==="餐饮")ms+=t.amountCents;});
+    mealSavedSoFar+=c.mealCents-ms;
+  }
+  var piggyAuto=0;
+  var piggyManual=(state.piggyTxns||[]).reduce(function(s,t){return s+t.amountCents;},0);
+  var piggyCarry=(state.piggyTxns||[]).filter(function(t){return t.kind==="carryover";}).reduce(function(s,t){return s+t.amountCents;},0);
+  var piggy=piggyAuto+piggyManual;
+  var lockedRaw=piggyAuto+(piggyManual-piggyCarry);
+  var piggyLocked=piggy>0?Math.max(0,Math.min(lockedRaw,piggy)):0;
+  var rem=remTotal-piggyLocked;
+  var remDaily=rem;
+  var win=Math.min(7,day),winSum=0;
+  for(var i=0;i<win;i++){var dd=new Date(ed+"T00:00:00");dd.setDate(dd.getDate()-i);var iso=dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0")+"-"+String(dd.getDate()).padStart(2,"0");
+    state.txns.forEach(function(t){if(t.date===iso&&t.type!=="income")winSum+=t.amountCents;});}
+  var avg=win>0?winSum/win:0;
+  var realRemain=B-F-spent;
+  var mealReserveTotal=c.mealCents*D;
+  var mealReservePast=c.mealCents*Math.max(0,day-1);
+  var mealReserveRemaining=c.mealCents*R;
+  return {D:D,day:day,R:R,F:F,income:income,spent:spent,todaySpent:todaySpent,mealSpent:mealSpent,B:B,rem:rem,remTotal:remTotal,freeTotal:freeTotal,piggy:piggy,piggyAuto:piggyAuto,mealSavedSoFar:mealSavedSoFar,piggyManual:piggyManual,piggyCarry:piggyCarry,piggyLocked:piggyLocked,remDaily:remDaily,avg:avg,realRemain:realRemain,todayAllowance:R>0?remDaily/R:0,ed:ed,mealReserveTotal:mealReserveTotal,mealReservePast:mealReservePast,mealReserveRemaining:mealReserveRemaining};
+}
+function conclusion(d){
+  var c=state.config;
+  if(d.remDaily<c.mealCents*d.R){
+    var o=calcOverspend(d.remDaily,d.R,c.mealCents,c.savingCents);
+    var piggyTip=d.piggy>0?"；小金库还有 "+fmt(d.piggy)+" 可以调用补上":"";
+    return {t:"已经超支了，先二选一",r:"按 "+fmt(c.mealCents)+" 吃还能吃 "+o.eatDays.toFixed(1)+" 天；摊到月底每天 "+fmt(o.perDay)+piggyTip,a:"在下面超支卡里选模式一或模式二，或从小金库调用补足"};
+  }
+  if(d.todaySpent>d.todayAllowance)return {t:"今天收一收",r:"今天已花 "+fmt(d.todaySpent)+"，超过今日可用 "+fmt(d.todayAllowance),a:"今天别再花了，超出的会摊到后面几天"};
+  return {t:"今天可以正常花",r:"今日可用 "+fmt(d.todayAllowance)+"，其中饭钱留 "+fmt(c.mealCents),a:"自由钱约 "+fmt(d.todayAllowance-c.mealCents)+"，买大件先去试算"};
+}
+function overspendCard(d){
+  var c=state.config;
+  if(!(d.remDaily<c.mealCents*d.R))return "";
+  var o=calcOverspend(d.remDaily,d.R,c.mealCents,c.savingCents);
+  var runOut=new Date(d.ed+"T00:00:00");runOut.setDate(runOut.getDate()+Math.max(0,Math.floor(o.eatDays)-1));
+  var runOutStr=(runOut.getMonth()+1)+"月"+runOut.getDate()+"号";
+  return '<div class="card" style="border-color:#f3c2c2"><b class="red">饭钱不够 '+fmt(c.mealCents)+' 了，二选一</b><div class="grid2" style="margin-top:8px">'
+  +'<div class="card" style="margin:0"><b>模式一：保标准，算天数</b><p>按每天 '+fmt(c.mealCents)+' 吃，剩余可花 '+fmt(d.rem)+' 还能吃 <b>'+o.eatDays.toFixed(1)+' 天</b>（到 '+runOutStr+'），离月底还差 '+Math.max(0,o.shortDays).toFixed(1)+' 天。</p><button class="small '+(c.overspendMode==="keepStandard"?"":"ghost")+'" onclick="setMode(\'keepStandard\')">选模式一</button></div>'
+  +'<div class="card" style="margin:0"><b>模式二：保天数，算活下去每天吃多少</b><p>把 '+fmt(d.remDaily)+' 摊到 '+d.R+' 天，要活到月底每天吃 <b>'+fmt(o.survivePerDay)+'</b>（比 '+fmt(c.mealCents)+' 每天少吃 '+fmt(Math.max(0,o.cutPerDay))+'）'+(o.needToZero>0?'，<span class="red">现在已经是负数，先补 '+fmt(o.needToZero)+' 才能每天有钱吃饭</span>':"")+'，补 '+fmt(Math.max(0,o.needToBase))+' 恢复每天 '+fmt(c.mealCents)+'。</p><button class="small '+(c.overspendMode==="spreadEven"?"":"ghost")+'" onclick="setMode(\'spreadEven\')">选模式二</button></div></div>'
+  +(d.piggy>0?'<p>小金库还有 '+fmt(d.piggy)+'，可以调用到本月补足饭钱。<button class="small" onclick="piggyCallToMonth('+Math.min(d.piggy,Math.max(0,o.needToBase))+')">从小金库调用 '+fmt(Math.min(d.piggy,Math.max(0,o.needToBase)))+' 补足</button></p>':"")
+  +'<p class="muted">动存款对比：把存款目标 '+fmt(c.savingCents)+' 释放后剩余可花 '+fmt(o.remReal)+'，模式一能吃 '+o.eatDaysReal.toFixed(1)+' 天，模式二每天 '+fmt(o.perDayReal)+'。顺序：先动自由钱和小金库，再动存款，最后才降饭钱。</p></div>';
+}
+function guide(title,steps){
+  return '<div class="guide"><b>'+title+'</b><ol>'+steps.map(function(s){return '<li>'+s+'</li>';}).join("")+'</ol></div>';
+}
+function goPage(page){
+  document.querySelectorAll("#tabs button").forEach(function(x){x.classList.toggle("active",x.dataset.page===page);});
+  document.querySelectorAll(".page").forEach(function(p){p.classList.toggle("active",p.id==="page-"+page);});
+  window.scrollTo(0,0);
+}
+function spentByCategoryCard(d){
+  var stats={};
+  state.txns.forEach(function(t){
+    if(t.type==="income")return;
+    if(!stats[t.tag])stats[t.tag]={sum:0,count:0};
+    stats[t.tag].sum+=t.amountCents;stats[t.tag].count++;
+  });
+  var rows=Object.keys(stats).map(function(tag){return {tag:tag,sum:stats[tag].sum,count:stats[tag].count};}).sort(function(a,b){return b.sum-a.sum;});
+  var total=d.spent;
+  var colors=["#2563eb","#16a34a","#d97706","#dc2626","#7c3aed","#0891b2","#db2777","#65a30d","#ea580c","#475569"];
+  var pie="";
+  if(total>0&&rows.length){
+    var R=70,C=2*Math.PI*R,off=0,seg="";
+    rows.forEach(function(r,i){
+      var frac=r.sum/total,len=frac*C;
+      seg+='<circle cx="90" cy="90" r="'+R+'" fill="none" stroke="'+colors[i%colors.length]+'" stroke-width="34" stroke-dasharray="'+len.toFixed(2)+' '+(C-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 90 90)"/>';
+      off+=len;
+    });
+    pie='<div style="text-align:center;margin:6px 0"><svg width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="本月已花饼图">'+seg+'<text x="90" y="86" text-anchor="middle" font-size="13" fill="#667085">本月已花</text><text x="90" y="108" text-anchor="middle" font-size="19" font-weight="700" fill="#17202e">'+fmt(total)+'</text></svg></div>';
+  }
+  var list=rows.map(function(r,i){
+    var pct=total>0?(r.sum/total*100):0;
+    return '<div class="listitem"><div style="flex:1"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+colors[i%colors.length]+';margin-right:6px"></span><b>'+r.tag+'</b> <span class="muted">'+r.count+' 笔 · 占已花 '+pct.toFixed(1)+'%</span><div class="bar"><i style="width:'+Math.min(100,pct)+'%;background:'+colors[i%colors.length]+'"></i></div></div><div style="text-align:right"><b>'+fmt(r.sum)+'</b></div></div>';
+  }).join("")||'<p class="muted">本月还没有花钱记录，去「记一笔」记第一笔。</p>';
+  return '<div class="card"><b>本月已花分类（共 '+fmt(total)+'）</b><p class="muted">饼图看占比，下面按类别从多到少排，颜色和饼图一一对应。固定开销（话费、交通等）是单独扣的，不在这里面。</p><details><summary>占比怎么算的</summary><p class="muted">每类占比 = 这类已花 ÷ 本月已花总额 '+fmt(total)+'，饼图扇区大小按这个比例画；各类合计正好等于本月已花。</p></details>'+pie+list+'</div>';
+}
+function renderHome(){
+  var d=derived(),c=state.config,con=conclusion(d);
+  var todayMeal=todayMealSpent(d),todayLeft=d.todayAllowance-d.todaySpent,mealDiff=todayMeal-c.mealCents;
+  var mealPct=d.mealReserveTotal>0?Math.min(100,d.mealSpent/d.mealReserveTotal*100):0;
+  var forecast=d.avg>0?(d.realRemain/d.avg>=d.R?"够花到月末，预计月底结余 "+fmt(d.realRemain-d.avg*d.R):"照这个速度约 "+(d.realRemain/d.avg).toFixed(1)+" 天后花完"):"暂无足够记录预测";
+  var lock="";
+  if(c.overspendMode==="keepStandard")lock='<p class="pill">已选模式一：每天按 '+fmt(c.mealCents)+' 吃</p>';
+  if(c.overspendMode==="spreadEven")lock='<p class="pill">已选模式二：每天饭钱 '+fmt(d.R>0?d.rem/d.R:0)+'</p>';
+  document.getElementById("page-home").innerHTML=
+  guide("新手四步，照着点就行",["先点顶栏「设置」：填这个月总共多少钱、每天饭钱留多少（如 45 元），保存一次就行。","每天点「记一笔」：填金额、选标签、保存，首页数字会自动变。","想买耳机/衣服先点「能不能买」：填价格看红黄绿，再决定买不买。","哪天懒得记了：到「记一笔」最上面填一下手里还剩多少钱，一键校准。"])
+  +simBarCard(d)
+  +'<div class="card"><div class="muted">'+c.month+' · 今天（'+d.ed+(c.testDate?"，测试日期":"，真实日期")+'）· 还剩 '+d.R+' 天</div><div class="row" style="align-items:flex-end"><div><div class="big">'+fmt(d.rem)+'</div><div class="muted">剩余可花（本月剩余，不含小金库）</div></div><div><div style="font-size:26px;font-weight:700">'+fmt(d.rem-d.mealReserveRemaining)+'</div><div class="muted">去掉饭钱后可花（已留出接下来 '+d.R+' 天饭钱 '+fmt(d.mealReserveRemaining)+'）</div></div></div><div class="muted">已扣固定费 '+fmt(d.F)+'、存款目标 '+fmt(c.savingCents)+' · 本月总金额 '+fmt(d.B)+' · 已花 '+fmt(d.spent)+'</div>'+lock
+  +'<div class="row" style="margin-top:10px"><div>今日可用<br><b style="font-size:20px">'+fmt(d.todayAllowance)+'</b></div><div>今日已花<br><b style="font-size:20px">'+fmt(d.todaySpent)+'</b></div><div>今日还剩<br><b style="font-size:20px"'+(todayLeft<0?' class="red"':"")+'>'+fmt(todayLeft)+'</b></div><div>小金库<br><b style="font-size:20px">'+fmt(Math.max(0,d.piggy))+'</b>'+(d.piggy<0?' <span class="red">（实际 '+fmt(d.piggy)+'）</span>':"")+'<br><button class="small ghost" onclick="goPage(\'wish\')">存取小金库</button></div></div>'
+  +'<p class="muted">今日还剩 = 今日可用 '+fmt(d.todayAllowance)+' − 今日已花 '+fmt(d.todaySpent)+' = <b'+(todayLeft<0?' class="red"':"")+'>'+fmt(todayLeft)+'</b>'+(todayLeft<0?'，今天已经花超了，超出的会摊到后面几天':'')+'。今天吃饭已花 '+fmt(todayMeal)+'，饭钱标准 '+fmt(c.mealCents)+'：'+(mealDiff>0?'<b class="red">已超标准 '+fmt(mealDiff)+'</b>，超的这部分先由今天的自由钱补，今日可用只会摊薄一点，所以看起来变动不大':(mealDiff<0?'还可吃 '+fmt(-mealDiff):'正好等于标准'))+'。</p>'
+  +'<p class="muted">剩余可花只算本月剩余，不含小金库；小金库 '+fmt(Math.max(0,d.piggy))+' 没调用前不算进来，手动调用到本月后才变成剩余可花。</p>'
+  +'<details><summary>今日可用怎么算的（点开看，数字是当前的）</summary><p class="muted">第一步 剩余可花 = 月总金额 '+fmt(d.B)+'（含本月收入 '+fmt(d.income)+'）− 固定费 '+fmt(d.F)+' − 存款目标 '+fmt(c.savingCents)+' − 本月已花 '+fmt(d.spent)+' − 已进小金库的 '+fmt(d.piggyLocked)+' = '+fmt(d.rem)+'。小金库没调用前不放在剩余可花里，剩余可花就是本月剩余；把小金库钱手动调用到本月金额后，才变成剩余可花（小金库和存款目标是两个分开的）。<br>去掉饭钱后可花 = 剩余可花 − 接下来 '+d.R+' 天饭钱预留 '+fmt(d.mealReserveRemaining)+' = '+fmt(d.rem-d.mealReserveRemaining)+'，这是不动饭钱、可以随便花的钱。<br>第二步 今日可用 = 剩余可花 ÷ 剩余 '+d.R+' 天（包括今天）= '+fmt(d.todayAllowance)+'。今天花超了不会卡你，超出的摊到后面几天，明天自动变小。饭钱不够每天 '+fmt(c.mealCents)+' 时，这个数就是「要活到月底每天吃多少」。</p></details></div>'
+  +spentByCategoryCard(d)
+  +'<div class="card"><b>饭钱预留（随日期实时变）</b><div class="big" style="font-size:26px">'+fmt(d.mealReserveRemaining)+'</div>'
+  +'<p class="muted">接下来还需预留 = 每天 '+fmt(c.mealCents)+' × 剩余 '+d.R+' 天，随日期每天自动少 '+fmt(c.mealCents)+'。全月共预留 '+fmt(d.mealReserveTotal)+'，已经过去的 '+(d.day-1)+' 天占 '+fmt(d.mealReservePast)+'，今天占 '+fmt(c.mealCents)+'。</p>'
+  +(d.remDaily<d.mealReserveRemaining?'<p><b class="red">饭钱不够每天 '+fmt(c.mealCents)+' 了：</b>要活到月底，接下来每天吃 <b>'+fmt(d.todayAllowance)+'</b>（剩余可花 '+fmt(d.rem)+' ÷ '+d.R+' 天）。补 '+fmt(d.mealReserveRemaining-d.remDaily)+' 恢复每天 '+fmt(c.mealCents)+'。</p>':'<p class="muted">饭钱够每天 '+fmt(c.mealCents)+'：每天可用 '+fmt(d.todayAllowance)+'，其中饭钱 '+fmt(c.mealCents)+'、自由钱 '+fmt(Math.max(0,d.todayAllowance-c.mealCents))+'。</p>')
+  +'<details><summary>饭钱预留怎么算的</summary><p class="muted">接下来还需预留 = 每天饭钱 '+fmt(c.mealCents)+' × 剩余 '+d.R+' 天 = '+fmt(d.mealReserveRemaining)+'，日期每过一天少 '+fmt(c.mealCents)+'。本月总饭钱 = '+fmt(c.mealCents)+' × '+d.D+' 天 = '+fmt(d.mealReserveTotal)+'，吃饭进度 = 已花饭钱 ÷ 本月总饭钱。饭钱不够时「要活到月底每天吃多少」= 剩余可花 ÷ 剩余天数，不设固定生存线。</p></details>'
+  +'<label>吃饭进度：已花饭钱 '+fmt(d.mealSpent)+' / 本月总饭钱 '+fmt(d.mealReserveTotal)+'（'+(d.mealReserveTotal>=d.mealSpent?'还剩饭钱 '+fmt(d.mealReserveTotal-d.mealSpent):'已超 '+fmt(d.mealSpent-d.mealReserveTotal))+'，已用 '+mealPct.toFixed(0)+'%）</label><div class="progress"><i style="width:'+mealPct+'%"></i></div>'
+  +'<p class="muted">本月总饭钱 = 每天 '+fmt(c.mealCents)+' × '+d.D+' 天。进度条满 = 本月饭钱花完。</p>'
+  +'<div class="card" style="margin:8px 0 0;background:var(--bg)"><b>单独修改吃饭数据</b><p class="muted">只改餐饮，不影响其他账。选日期填金额：「加一笔」是在这天多记一笔吃饭；「改成这个数」是把这天吃饭总数改成填的数（记错了用这个）；填 0 改成这个数就是清掉这天吃饭。</p>'
+  +'<label>日期</label><input id="mealDate" type="date" value="'+d.ed+'">'
+  +'<label>吃饭金额（元）</label><input id="mealAmt" type="number" inputmode="decimal" placeholder="如 45">'
+  +'<div class="stepbtn"><button class="small" onclick="addMeal()">加一笔吃饭</button><button class="small ghost" onclick="setMealDay()">改成这个数</button></div>'
+  +'<p class="muted">今天（'+d.ed+'）吃饭已记 '+fmt(todayMealSpent(d))+'。</p></div>'
+  +'<p class="muted">全月自由钱 '+fmt(d.freeTotal)+(d.freeTotal<0?' <span class="red">饭钱都留不够，先降存款目标或饭钱标准</span>':"")+' · 月底预测：'+forecast+'</p></div>'
+  +overspendCard(d)
+  +'<div class="card"><b>一句话总结</b><p><b>结论：</b>'+con.t+'</p><p><b>原因：</b>'+con.r+'</p><p><b>怎么做：</b>'+con.a+'</p></div>'
+  +'<div class="card"><b>快速开始</b><p class="muted">第一次用先去「设置」填月总金额和饭钱，或载入示例数据试一遍。</p><div class="stepbtn"><button class="ghost" onclick="goPage(\'settings\')">去设置</button><button class="ghost" onclick="loadDemo()">载入示例数据（3000元/45元饭钱）</button></div></div>';
+}
+function tagOptions(sel){return state.config.dailyTags.map(function(t){return '<option '+(t===sel?"selected":"")+'>'+t+'</option>';}).join("");}
+function renderRecord(){
+  var d=derived();
+  var list=state.txns.slice().sort(function(a,b){return b.date.localeCompare(a.date);}).map(function(t){
+    var label=t.type==="income"?"收入":(t.type==="calibration"?"校准":"支出");
+    return '<div class="listitem"><div><b>'+t.tag+'</b> <span class="pill">'+label+'</span><div class="muted">'+t.date+' '+(t.note||"")+'</div></div><div style="text-align:right"><b>'+fmt(t.amountCents)+'</b><br><button class="small danger" onclick="delTxn(\''+t.id+'\')">删</button></div></div>';
+  }).join("")||'<p class="muted">还没有记录。</p>';
+  document.getElementById("page-record").innerHTML=
+  guide("这个栏目是干什么的：记录每天花了多少",["正常记账：在下面「记一笔」里选日期、填金额、选标签，点保存，首页会自动重算。","懒得逐笔记：用最上面的「余额校准」，填手里还剩多少钱，点校准，差额自动补上。","记错了：在最下面的流水里点「删」，删掉后所有数字自动恢复。"])
+  +'<div class="card"><b>余额校准（懒得记时用）</b><p class="muted">填一个总数直接替换重算，不用补每天明细。系统已记支出 '+fmt(d.spent)+'。</p>'
+  +'<label>填法A：我现在手里还剩多少钱（元）</label><input id="calRemain" type="number" inputmode="decimal" placeholder="如 2100">'
+  +'<label>填法B：这个月总共已经花了多少（元，二选一）</label><input id="calSpent" type="number" inputmode="decimal" placeholder="如 900">'
+  +'<p><button onclick="doCalibrate()">校准并重算</button></p></div>'
+  +'<div class="card"><b>记一笔</b><label>日期</label><input id="txDate" type="date" value="'+d.ed+'">'
+  +'<label>金额（元）</label><input id="txAmt" type="number" inputmode="decimal" placeholder="如 15">'
+  +'<label>标签</label><select id="txTag">'+tagOptions("餐饮")+'</select>'
+  +'<label>自定义标签（填了优先用这个）</label><input id="txTagCustom" placeholder="如 奶茶">'
+  +'<label>类型</label><select id="txType"><option value="expense">支出</option><option value="income">收入</option></select>'
+  +'<label>备注</label><input id="txNote" placeholder="如 食堂午饭"><p><button onclick="addTxn()">保存</button></p></div>'
+  +'<div class="card"><b>流水</b>'+list+'</div>';
+}
+function renderTrial(result){
+  var d=derived();
+  var res=result||"";
+  document.getElementById("page-trial").innerHTML=
+  guide("这个栏目是干什么的：买之前先算能不能买",["填想买的东西名称、选标签、填价格，点「试算」。","看颜色：绿色可以买，黄色能买但要紧一紧，红色先别买。","决定买了点「确认已买」会自动记一笔；还想再想想就点「加入心愿单」。"])
+  +'<details><summary>试算怎么算的</summary><p class="muted">买后剩余 =（剩余可花 + 可调用的小金库）− 价格，小金库没调用前不算在剩余可花里，试算按你手动调用加入后算；买后要活到月底每天吃多少 = 买后剩余 ÷ 剩余天数。这个数 ≥ 饭钱标准是绿色，低于标准但还有钱吃饭是黄色，买完变负数（连饭都吃不起）是红色。黄色时还会算：每天要少吃多少、少存多少能不降饭钱、靠自由钱攒多少天能攒够。</p></details>'
+  +'<div class="card"><b>能不能买（试算）</b><p class="muted">剩余可花 '+fmt(d.rem)+'（不含小金库）· 小金库 '+fmt(Math.max(0,d.piggy))+' 可手动调用加入 · 剩余 '+d.R+' 天 · 饭钱标准 '+fmt(state.config.mealCents)+'</p>'
+  +'<label>想买的东西</label><input id="trName" placeholder="如 耳机">'
+  +'<label>标签</label><select id="trTag">'+tagOptions("购物-数码")+'</select>'
+  +'<label>价格（元）</label><input id="trPrice" type="number" inputmode="decimal" placeholder="如 299">'
+  +'<p><button onclick="doTrial()">试算</button></p><div id="trResult">'+res+'</div></div>';
+}
+function doTrial(){
+  var d=derived(),c=state.config;
+  var name=document.getElementById("trName").value||"这个东西";
+  var tag=document.getElementById("trTag").value;
+  var price=yuanToCents(document.getElementById("trPrice").value);
+  if(price<=0){alert("先填价格");return;}
+  var r=calcTrial(d.rem+Math.max(0,d.piggy),price,d.R,c.mealCents,c.savingCents,d.freeTotal,d.D,Math.max(0,d.piggy));
+  var title=r.level==="g"?"🟢 可以买":(r.level==="y"?"🟡 能买但要紧一紧":"🔴 不建议买");
+  var html='<div class="result '+r.level+'"><b>'+title+'：'+name+' '+fmt(price)+'</b>'
+  +'<p>买后剩 '+fmt(r.after)+'，要活到月底接下来 '+d.R+' 天每天吃 <b>'+fmt(r.survivePerDay)+'</b>（你的饭钱标准是每天 '+fmt(c.mealCents)+'）。</p>'
+  +(r.needToZero>0?'<p class="red">买完就没钱吃饭了，还差 '+fmt(r.needToZero)+' 才能每天有钱吃，补 '+fmt(r.needToBase)+' 恢复每天 '+fmt(c.mealCents)+'。</p>':(r.cutPerDay>0?'<p>硬买的话每天要少吃约 '+fmt(r.cutPerDay)+'，补 '+fmt(r.needToBase)+' 恢复每天 '+fmt(c.mealCents)+'。</p>':""))
+  +(r.moveSaving>0?'<p>少存 '+fmt(r.moveSaving)+' 就能不降饭钱（动存款目标）。</p>':"")
+  +(r.saveDays!==null?'<p>靠自由钱攒：还差 '+fmt(r.stillNeed)+'，约 '+r.saveDays+' 天攒够（小金库已有 '+fmt(Math.max(0,d.piggy))+'）。</p>':'<p>本月自由钱不足，靠攒自由钱攒不出来。</p>')
+  +'<p><b>结论：</b>'+(r.level==="g"?"可以买":r.level==="y"?"先紧一紧再买":"先别买")+'</p>'
+  +'<p><button class="small" onclick="confirmBuy(\''+name.replace(/'/g,"")+'\',\''+tag+'\','+price+')">确认已买（记一笔）</button> <button class="small ghost" onclick="addWish(\''+name.replace(/'/g,"")+'\',\''+tag+'\','+price+')">加入心愿单</button></p></div>';
+  renderTrial(html);
+}
+function renderWish(){
+  var d=derived();
+  var list=state.wishlist.map(function(w){
+    var left=Math.max(0,w.priceCents-Math.max(0,d.piggy));
+    var days=Math.floor((new Date(d.ed)-new Date(w.createdDate))/86400000);
+    var cool=days<3?' <span class="pill">冷静期还剩 '+(3-days)+' 天</span>':"";
+    return '<div class="listitem"><div><b>'+w.name+'</b> '+cool+'<div class="muted">'+w.tag+' · '+fmt(w.priceCents)+' · 小金库还差 '+fmt(left)+' · '+(w.status==="bought"?"已买":"想买")+'</div><div class="bar"><i style="width:'+(w.priceCents>0?Math.min(100,Math.max(0,d.piggy)/w.priceCents*100):0)+'%"></i></div></div><div>'+(w.status!=="bought"?'<button class="small" onclick="buyWish(\''+w.id+'\')">购买</button>':"")+' <button class="small danger" onclick="delWish(\''+w.id+'\')">删</button></div></div>';
+  }).join("")||'<p class="muted">心愿单是空的，去「能不能买」里加入。</p>';
+  var kindName={in_month:"从本月划入",in_external:"外部存入",adjust:"改余额",out_to_month:"调用到本月",spend:"买心愿单",carryover:"上月结余转入"};
+  var ledger=(state.piggyTxns||[]).slice().reverse().map(function(t){
+    return '<div class="listitem"><div><b>'+(kindName[t.kind]||t.kind)+'</b><div class="muted">'+t.date+' '+(t.note||"")+'</div></div><div style="text-align:right"><b>'+fmt(t.amountCents)+'</b><br><button class="small danger" onclick="delPiggyTxn(\''+t.id+'\')">撤销</button></div></div>';
+  }).join("")||'<p class="muted">还没有手动存取记录。</p>';
+  document.getElementById("page-wish").innerHTML=
+  guide("这个栏目是干什么的：想买的东西先放着攒钱，小金库随时存取",["每天吃饭省下的钱月中先不进小金库，月底结算时连同存下来的钱一起算进去；也可以在下面手动存入、改余额。","本月钱不够时：点「调用到本月」，小金库的钱立刻补进本月可用，今日可用和饭钱预留跟着重算。","心愿单有 3 天冷静期，攒够了点「购买」优先从小金库扣，自动记一笔。"])
+  +'<div class="card"><b>小金库余额 '+fmt(d.piggy)+'</b><p class="muted">上月结转和手动存取合计 '+fmt(d.piggyManual)+'。本月吃饭已省 '+fmt(d.mealSavedSoFar)+'（还没进小金库，月底结算时才算进去）。小金库的钱没调用前不算进剩余可花，手动调用到本月后才变成剩余可花。</p>'
+  +'<details><summary>小金库余额怎么算的</summary><p class="muted">小金库和存款目标是两个分开的：存款目标是月初先扣掉的「打算存多少」，小金库是已经攒下来的钱。本月吃饭已省 = 已过去每一天（饭钱标准 − 当天餐饮已花）之和，月中先不进小金库、还算在剩余可花里，月底结算时连同存下来的钱一起算进小金库。手动存取 = 下面流水合计（存入为正，调用/买心愿单为负，改余额记差额）。小金库的钱没调用前不放在剩余可花里，剩余可花就是本月剩余；本月已进小金库的 '+fmt(d.piggyLocked)+' 和上月结转的 '+fmt(d.piggyCarry)+' 都不算进剩余可花，把小金库钱手动调用到本月金额后，才变成剩余可花。月底结算时本月没花完的结余（包括没花掉的存款目标）自动转入小金库。</p></details>'
+  +'<label>金额（元）</label><input id="pgAmt" type="number" inputmode="decimal" placeholder="如 100">'
+  +'<div class="stepbtn"><button onclick="piggyInMonth()">存入（从本月可用划入）</button><button class="ghost" onclick="piggyInExternal()">外部存入（不占本月）</button><button class="ghost" onclick="piggyOutToMonth()">调用到本月（补可用）</button></div>'
+  +'<label>直接改余额（把小金库改成这个数，元）</label><input id="pgSet" type="number" inputmode="decimal" placeholder="如 200">'
+  +'<p><button class="ghost" onclick="piggySetBalance()">改成这个余额</button></p>'
+  +'<p class="muted">说明：从本月划入会让今日可用变小；外部存入是本月之外的钱（如兼职专门存的），不占本月；改余额是把小金库对齐到你实际存的数，多退少补自动算；调用到本月会让今日可用变大。</p></div>'
+  +'<div class="card"><b>小金库流水</b>'+ledger+'</div>'
+  +'<div class="card"><b>心愿单</b>'+list+'</div>';
+}
+function historyCard(){
+  var list=(state.archives||[]).slice().reverse().map(function(a){
+    var s=a.summary;
+    var detail=a.txns.slice().sort(function(x,y){return x.date.localeCompare(y.date);}).map(function(t){
+      return '<div class="listitem"><div><b>'+t.tag+'</b><div class="muted">'+t.date+' '+(t.note||"")+'</div></div><div><b>'+fmt(t.amountCents)+'</b></div></div>';
+    }).join("")||'<p class="muted">这个月没有记录。</p>';
+    return '<div class="card" style="margin:8px 0"><b>'+a.month+' 明细</b><p class="muted">月总金额 '+fmt(s.B)+' · 固定费 '+fmt(s.F)+' · 已花 '+fmt(s.spent)+'（餐饮 '+fmt(s.mealSpent)+'）· 结余 '+fmt(s.realRemain)+' 已进小金库 '+fmt(s.carriedToPiggy)+' · 共 '+a.txns.length+' 笔</p><details><summary>看这个月每一笔</summary>'+detail+'</details><p><button class="small danger" onclick="delArchive(\''+a.month+'\')">删除这个月明细</button></p></div>';
+  }).join("")||'<p class="muted">还没有历史月份。每个月结束自动把明细存到这里，本月账单清零重算，上月结余自动进小金库。</p>';
+  return '<div class="card"><b>历史月份明细（保存在本地）</b>'+list+'</div>';
+}
+function delArchive(month){
+  if(!confirm("删除 "+month+" 的明细？删了就没了，备份 JSON 里还有的话可导入恢复。"))return;
+  state.archives=(state.archives||[]).filter(function(a){return a.month!==month;});
+  save();renderAll();
+}
+function renderSettings(){
+  var c=state.config,d=derived();
+  var fixedList=c.fixed.map(function(f){
+    return '<div class="listitem"><div><b>'+f.tag+'</b><div class="muted">'+fmt(f.amountCents)+' · 每月'+f.day+'号 · '+(f.cycle==="weekly"?"每周":f.cycle==="semester"?"每学期摊分":"每月")+' · 月均 '+fmt(fixedMonthlyEquiv(f))+'</div></div><div><button class="small ghost" onclick="toggleFixed(\''+f.id+'\')">'+(f.enabled?"停用":"启用")+'</button> <button class="small danger" onclick="delFixed(\''+f.id+'\')">删</button></div></div>';
+  }).join("");
+  var tagStats={};
+  state.txns.forEach(function(t){if(t.type!=="income")tagStats[t.tag]=(tagStats[t.tag]||0)+t.amountCents;});
+  var maxTag=Math.max(1,Math.max.apply(null,Object.values(tagStats).concat([1])));
+  var stats=Object.keys(tagStats).map(function(k){return '<p>'+k+' '+fmt(tagStats[k])+'</p><div class="bar"><i style="width:'+(tagStats[k]/maxTag*100)+'%"></i></div>';}).join("")||'<p class="muted">暂无支出统计。</p>';
+  document.getElementById("page-settings").innerHTML=
+  guide("这个栏目是干什么的：月初填一次，平时很少改",["月度设置：填月总金额、每天饭钱、存款目标，点保存。","固定开销：话费、交通这类每月固定扣的钱，选标签填金额添加；没有的标签就自己写一个自定义的。","换手机/电脑：在最下面导出备份，到另一台导入，账就搬过去了。"])
+  +'<div class="card"><b>月度设置</b>'
+  +'<label>月份</label><input id="cfgMonth" type="month" value="'+c.month+'">'
+  +'<label>月总金额（元）</label><input id="cfgTotal" type="number" value="'+(c.totalCents/100)+'">'
+  +'<label>每日饭钱标准（元，如 45；不够时系统自动算活到月底每天吃多少）</label><input id="cfgMeal" type="number" value="'+(c.mealCents/100)+'">'
+  +'<label>存款目标（元）</label><input id="cfgSaving" type="number" value="'+(c.savingCents/100)+'">'
+  +'<label>测试日期（留空=真实今天，测试版模拟用）</label><input id="cfgTestDate" type="date" value="'+(c.testDate||"")+'">'
+  +(d.freeTotal<0?'<p class="red">警告：全月自由钱 '+fmt(d.freeTotal)+'，饭钱都留不够，先降存款目标或饭钱标准。</p>':'<p class="muted">全月自由钱 '+fmt(d.freeTotal)+'</p>')
+  +'<details><summary>全月自由钱怎么算的</summary><p class="muted">全月自由钱 = 月总金额（含收入）'+fmt(d.B)+' − 固定费 '+fmt(d.F)+' − 存款目标 '+fmt(c.savingCents)+' − 全月饭钱（每天 '+fmt(c.mealCents)+' × '+d.D+' 天 = '+fmt(d.mealReserveTotal)+'）= '+fmt(d.freeTotal)+'。买耳机衣服这类钱都从自由钱里出，自由钱是负数说明饭钱都留不够。</p></details>'
+  +'<p><button onclick="saveConfig()">保存设置</button></p></div>'
+  +'<div class="card"><b>固定开销（合计月均 '+fmt(d.F)+'）</b>'+fixedList
+  +'<label>预置标签</label><select id="fxTag">'+PRESET_FIXED.concat(c.customFixedTags).map(function(t){return '<option>'+t+'</option>';}).join("")+'</select>'
+  +'<label>自定义标签（填了优先，并保存到列表）</label><input id="fxCustom" placeholder="如 猫粮">'
+  +'<label>金额（元）</label><input id="fxAmt" type="number" placeholder="如 80">'
+  +'<label>扣款日（每月几号）</label><input id="fxDay" type="number" value="1">'
+  +'<label>周期</label><select id="fxCycle"><option value="monthly">每月</option><option value="weekly">每周（按月均折算）</option><option value="semester">每学期（按5个月摊分）</option></select>'
+  +'<p><button onclick="addFixed()">添加固定费</button></p></div>'
+  +'<div class="card"><b>本月标签统计</b>'+stats+'</div>'
+  +historyCard()
+  +'<div class="card"><b>数据</b><p><button class="ghost" onclick="exportJSON()">导出备份 JSON</button> <button class="ghost" onclick="exportCSV()">导出 CSV</button></p><label>导入备份 JSON</label><input type="file" id="importFile" accept=".json" onchange="importJSON(this)"><p><button onclick="settleMonthNow()">手动月度重置（结算到下月）</button> '+(hasBackup()?'<button class="ghost" onclick="restoreBackup()">恢复结算前备份</button>':"")+'</p><p><button class="danger" onclick="resetAll()">清空重来</button></p></div>';
+}
+function renderAll(){renderHome();renderRecord();renderTrial();renderWish();renderSettings();}
+/* ===== 操作 ===== */
+function setMode(m){state.config.overspendMode=m;save();renderAll();}
+function addTxn(){
+  var amt=yuanToCents(document.getElementById("txAmt").value);
+  if(amt<=0){alert("先填金额");return;}
+  var custom=document.getElementById("txTagCustom").value.trim();
+  var tag=custom||document.getElementById("txTag").value;
+  if(custom&&state.config.dailyTags.indexOf(custom)<0)state.config.dailyTags.push(custom);
+  state.txns.push({id:uid(),date:document.getElementById("txDate").value||effDate(),amountCents:amt,type:document.getElementById("txType").value,tag:tag,note:document.getElementById("txNote").value.trim()});
+  save();renderAll();alert("已保存");
+}
+function delTxn(id){state.txns=state.txns.filter(function(t){return t.id!==id;});save();renderAll();}
+function todayMealSpent(d){return state.txns.filter(function(t){return t.date===d.ed&&t.type!=="income"&&t.tag==="餐饮";}).reduce(function(s,t){return s+t.amountCents;},0);}
+function addMeal(){
+  var date=document.getElementById("mealDate").value||effDate();
+  var amt=yuanToCents(document.getElementById("mealAmt").value);
+  if(amt<=0){alert("先填吃饭金额");return;}
+  state.txns.push({id:uid(),date:date,amountCents:amt,type:"expense",tag:"餐饮",note:"吃饭"});
+  save();renderAll();alert("已记 "+date+" 吃饭 "+fmt(amt));
+}
+function setMealDay(){
+  var date=document.getElementById("mealDate").value||effDate();
+  if(document.getElementById("mealAmt").value===""){alert("先填要改成的吃饭金额（填0是清掉这天吃饭）");return;}
+  var amt=yuanToCents(document.getElementById("mealAmt").value);
+  var old=state.txns.filter(function(t){return t.date===date&&t.type!=="income"&&t.tag==="餐饮";}).reduce(function(s,t){return s+t.amountCents;},0);
+  if(!confirm(date+" 吃饭原来记了 "+fmt(old)+"，改成 "+fmt(amt)+"，确认？"))return;
+  state.txns=state.txns.filter(function(t){return !(t.date===date&&t.type!=="income"&&t.tag==="餐饮");});
+  if(amt>0)state.txns.push({id:uid(),date:date,amountCents:amt,type:"expense",tag:"餐饮",note:"吃饭（已改）"});
+  save();renderAll();alert(date+" 吃饭已改成 "+fmt(amt));
+}
+function doCalibrate(){
+  var d=derived();
+  var remainV=document.getElementById("calRemain").value,spentV=document.getElementById("calSpent").value;
+  if(remainV===""&&spentV===""){alert("填剩余或已花，二选一");return;}
+  var useRemain=remainV!=="";
+  var r=calcCalibration(state.config.totalCents,d.income,d.spent,yuanToCents(remainV),yuanToCents(spentV),useRemain);
+  if(r.diff===0){alert("账对上了，不用校准");return;}
+  if(!confirm("系统已记 "+fmt(d.spent)+"，实际已花 "+fmt(r.actualSpent)+"，差 "+fmt(r.diff)+" 将记为未记账校准，确认替换？"))return;
+  state.txns.push({id:uid(),date:d.ed,amountCents:r.diff,type:"calibration",tag:"未记账校准",note:"余额校准"});
+  save();renderAll();alert("校准完成，已按实际总额重算");
+}
+function confirmBuy(name,tag,price){
+  state.txns.push({id:uid(),date:effDate(),amountCents:price,type:"expense",tag:tag,note:name});
+  save();renderAll();alert("已记一笔："+name+" "+fmt(price));
+}
+function addWish(name,tag,price){
+  state.wishlist.push({id:uid(),name:name,tag:tag,priceCents:price,priority:3,createdDate:effDate(),status:"want"});
+  save();renderAll();alert("已加入心愿单");
+}
+function buyWish(id){
+  var w=state.wishlist.find(function(x){return x.id===id;});if(!w)return;
+  var d=derived();
+  var fromPiggy=Math.min(Math.max(0,d.piggy),w.priceCents);
+  var carryPortion=Math.max(0,fromPiggy-d.piggyLocked);
+  w.status="bought";
+  var linkId=null;
+  if(carryPortion>0){linkId=uid();state.txns.push({id:linkId,date:effDate(),amountCents:carryPortion,type:"income",tag:"小金库调用转入",note:"小金库付"+w.name});}
+  if(fromPiggy>0)state.piggyTxns.push({id:uid(),date:effDate(),amountCents:-fromPiggy,kind:"spend",note:"买"+w.name,linkId:linkId});
+  state.txns.push({id:uid(),date:effDate(),amountCents:w.priceCents,type:"expense",tag:w.tag,note:w.name+(fromPiggy>0?"（小金库付"+fmt(fromPiggy)+"）":"")});
+  save();renderAll();
+}
+function piggyAmt(){var v=yuanToCents(document.getElementById("pgAmt").value);if(v<=0){alert("先填金额");return 0;}return v;}
+function piggyInMonth(){
+  var v=piggyAmt();if(!v)return;
+  var d=derived();
+  if(v>d.remDaily){alert("本月剩余可花只有 "+fmt(d.rem)+"，划不了这么多");return;}
+  state.piggyTxns.push({id:uid(),date:effDate(),amountCents:v,kind:"in_month",note:"从本月可用划入"});
+  save();renderAll();alert("已存入小金库 "+fmt(v)+"，今日可用已相应变小");
+}
+function piggyInExternal(){
+  var v=piggyAmt();if(!v)return;
+  var linkId=uid();
+  state.txns.push({id:linkId,date:effDate(),amountCents:v,type:"income",tag:"小金库外部存入",note:"外部钱存入小金库"});
+  state.piggyTxns.push({id:uid(),date:effDate(),amountCents:v,kind:"in_external",note:"外部存入",linkId:linkId});
+  save();renderAll();alert("已外部存入小金库 "+fmt(v)+"，不占本月可用");
+}
+function piggyOutToMonth(){
+  var v=piggyAmt();if(!v)return;
+  piggyCallToMonth(v);
+}
+function piggyCallToMonth(v){
+  var d=derived();
+  if(v<=0){alert("没有可调用的金额");return;}
+  if(v>Math.max(0,d.piggy)){alert("小金库只有 "+fmt(Math.max(0,d.piggy))+"，调用不了这么多");return;}
+  var carryPortion=Math.max(0,v-d.piggyLocked);
+  var linkId=null;
+  if(carryPortion>0){linkId=uid();state.txns.push({id:linkId,date:effDate(),amountCents:carryPortion,type:"income",tag:"小金库调用转入",note:"从小金库调用到本月"});}
+  state.piggyTxns.push({id:uid(),date:effDate(),amountCents:-v,kind:"out_to_month",note:"调用到本月可用",linkId:linkId});
+  save();renderAll();alert("已从小金库调用 "+fmt(v)+" 到本月，今日可用和饭钱预留已重算");
+}
+function piggySetBalance(){
+  var target=yuanToCents(document.getElementById("pgSet").value);
+  if(document.getElementById("pgSet").value===""){alert("先填要改成的余额");return;}
+  var d=derived();
+  var diff=target-d.piggy;
+  if(diff===0){alert("余额已经是这个数了");return;}
+  if(!confirm("小金库现在 "+fmt(d.piggy)+"，改成 "+fmt(target)+"，差额 "+fmt(diff)+" 将记为改余额，确认？"))return;
+  state.piggyTxns.push({id:uid(),date:effDate(),amountCents:diff,kind:"adjust",note:"改余额为"+fmt(target)});
+  save();renderAll();alert("小金库余额已改成 "+fmt(target));
+}
+function delPiggyTxn(id){
+  var t=(state.piggyTxns||[]).find(function(x){return x.id===id;});
+  if(t&&t.linkId)state.txns=state.txns.filter(function(x){return x.id!==t.linkId;});
+  state.piggyTxns=(state.piggyTxns||[]).filter(function(x){return x.id!==id;});
+  save();renderAll();
+}
+function delWish(id){state.wishlist=state.wishlist.filter(function(w){return w.id!==id;});save();renderAll();}
+function saveConfig(){
+  var c=state.config;
+  c.month=document.getElementById("cfgMonth").value||c.month;
+  c.totalCents=yuanToCents(document.getElementById("cfgTotal").value);
+  c.mealCents=yuanToCents(document.getElementById("cfgMeal").value);
+  delete c.survivalCents;
+  c.savingCents=yuanToCents(document.getElementById("cfgSaving").value);
+  c.testDate=document.getElementById("cfgTestDate").value;
+  save();renderAll();alert("设置已保存");
+}
+function addFixed(){
+  var custom=document.getElementById("fxCustom").value.trim();
+  var tag=custom||document.getElementById("fxTag").value;
+  if(custom&&state.config.customFixedTags.indexOf(custom)<0&&PRESET_FIXED.indexOf(custom)<0)state.config.customFixedTags.push(custom);
+  var amt=yuanToCents(document.getElementById("fxAmt").value);
+  if(amt<=0){alert("先填金额");return;}
+  state.config.fixed.push({id:uid(),tag:tag,amountCents:amt,day:parseInt(document.getElementById("fxDay").value||"1",10),cycle:document.getElementById("fxCycle").value,enabled:true});
+  save();renderAll();
+}
+function toggleFixed(id){var f=state.config.fixed.find(function(x){return x.id===id;});if(f)f.enabled=!f.enabled;save();renderAll();}
+function delFixed(id){state.config.fixed=state.config.fixed.filter(function(f){return f.id!==id;});save();renderAll();}
+function loadDemo(){
+  var s=defaultState();
+  s.config.testDate=s.config.month+"-10";
+  for(var d=1;d<=9;d++)s.txns.push({id:uid(),date:s.config.month+"-"+String(d).padStart(2,"0"),amountCents:4500,type:"expense",tag:"餐饮",note:"示例吃饭"});
+  s.txns.push({id:uid(),date:s.config.month+"-09",amountCents:10000,type:"expense",tag:"其他",note:"示例其他支出"});
+  s.wishlist.push({id:uid(),name:"耳机",tag:"购物-数码",priceCents:29900,priority:4,createdDate:s.config.month+"-08",status:"want"});
+  state=s;save();renderAll();alert("示例已载入：已花505元，今天模拟为10号，去试算耳机299元看看");
+}
+function resetAll(){if(confirm("清空所有数据重来？")){state=defaultState();save();renderAll();}}
+function download(name,text,type){var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:type}));a.download=name;a.click();}
+function exportJSON(){download("生活费备份.json",JSON.stringify(state,null,2),"application/json");}
+function exportCSV(){
+  var rows=["日期,类型,标签,金额元,备注"];
+  state.txns.forEach(function(t){rows.push([t.date,t.type,t.tag,(t.amountCents/100).toFixed(2),(t.note||"").replace(/,/g,"，")].join(","));});
+  download("生活费流水.csv","\ufeff"+rows.join("\n"),"text/csv");
+}
+function importJSON(input){
+  var f=input.files[0];if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){try{state=JSON.parse(r.result);save();renderAll();alert("导入成功");}catch(e){alert("文件不对，导入失败");}};
+  r.readAsText(f);
+}
+document.getElementById("tabs").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  document.querySelectorAll("#tabs button").forEach(function(x){x.classList.toggle("active",x===b);});
+  document.querySelectorAll(".page").forEach(function(p){p.classList.toggle("active",p.id==="page-"+b.dataset.page);});
+  window.scrollTo(0,0);
+});
+var _roll=monthRolloverIfNeeded();
+renderAll();
+if(_roll)alert("已进入 "+_roll.curMonth+"："+_roll.oldMonth+" 明细已保存在本地，上月结余 "+fmt(_roll.carried)+" 已自动进小金库，本月账单已清零重算。");
+/* 日期跨天自动重算：饭钱预留随真实日期变化；跨月自动结算 */
+var _lastDate=effDate();
+setInterval(function(){var nd=effDate();if(nd!==_lastDate){_lastDate=nd;var r=monthRolloverIfNeeded();renderAll();if(r)alert("已进入 "+r.curMonth+"："+r.oldMonth+" 明细已保存在本地，上月结余 "+fmt(r.carried)+" 已自动进小金库，本月账单已清零重算。");}},60000);
+</script>
+</body>
+</html>
